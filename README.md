@@ -273,8 +273,8 @@ Options:
   --out-format {zip,7z,iso,img,cab,pdf,vhd,vhdx}
                         Explicitely define output format disregarding output file's extension. Can be one of
                         following: zip, 7z, iso, img, cab, pdf, vhd, vhdx
-  -H HIDE, --hide HIDE  (Supported in ISO/IMG, ZIP) Set hidden attribute on file(s). Cannot be repeated, only comma-
-                        separated. Example: --hide icon.ico,evil.exe . Supports wildcards: --hide icon?.*
+  -H HIDE, --hide HIDE  (Supported in ISO/IMG, ZIP, VHD/VHDX) Set hidden attribute on file(s). Cannot be repeated, only
+                        comma-separated. Example: --hide icon.ico,evil.exe . Supports wildcards: --hide icon?.*
 
 ZIP specific options:
   --zip-noreadonly      DISABLE ZIP MOTW bypass that is used by default. By default, PackMyPayload marks Office files

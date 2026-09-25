@@ -286,6 +286,7 @@ class FatNode(object):
         self.children = {}
         self.local_path = None             # set for files
         self.size = 0
+        self.hidden = False                # FAT ATTR_HIDDEN (0x02)
         self.cluster = 0
         self.clusters = []
         self.parent_cluster = 0
@@ -309,7 +310,7 @@ class FatBuilder(object):
         self._files = []
         self._root = FatNode('')
 
-    def add_file(self, volume_path, local_path):
+    def add_file(self, volume_path, local_path, hidden=False):
         volume_path = volume_path.replace('\\', '/').strip('/')
         node = self._root
         for part in volume_path.split('/')[:-1]:
@@ -320,6 +321,7 @@ class FatBuilder(object):
         f = FatNode(leaf)
         f.local_path = local_path
         f.size = os.path.getsize(local_path)
+        f.hidden = hidden
         node.children[leaf] = f
         self._files.append(local_path)
 
@@ -471,7 +473,8 @@ class FatBuilder(object):
         for name in sorted(node.children.keys()):
             child = node.children[name]
             if child.local_path is not None:
-                data += b''.join(self._dir_entry(name, 0x20, child.cluster, child.size, used))
+                attr = 0x20 | (0x02 if child.hidden else 0)   # ATTR_ARCHIVE | ATTR_HIDDEN
+                data += b''.join(self._dir_entry(name, attr, child.cluster, child.size, used))
             else:
                 data += b''.join(self._dir_entry(name, 0x10, child.cluster, 0, used))
 
@@ -902,7 +905,7 @@ def write_vhdx(fh, raw):
 
 def build_raw_disk(files, disk_size, filesystem='fat32', image_format='vhd'):
     '''Builds a raw, MBR-partitioned disk of `disk_size` bytes containing a FAT
-    filesystem with `files` = [(volume_path, local_path), ...].
+    filesystem with `files` = [(volume_path, local_path[, hidden]), ...].
 
     Returns (SparseRaw, info_dict). Raises VhdTooSmall when the disk cannot
     hold requested files.'''
@@ -919,8 +922,10 @@ def build_raw_disk(files, disk_size, filesystem='fat32', image_format='vhd'):
     part_sectors = disk_sectors - part_start
 
     builder = FatBuilder(part_sectors, filesystem, heads=heads, spt=spt, part_start=part_start)
-    for volume_path, local_path in files:
-        builder.add_file(volume_path, local_path)
+    for entry in files:
+        volume_path, local_path = entry[0], entry[1]
+        hidden = len(entry) > 2 and bool(entry[2])
+        builder.add_file(volume_path, local_path, hidden=hidden)
 
     extents = builder.finalize()
 

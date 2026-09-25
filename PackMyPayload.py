@@ -74,7 +74,7 @@ Supported container/archive formats:
     opt.add_argument('-n', '--filename', default='', metavar='NAME', help='Package input file into archive/container under this filename (may contain relative path).')
     opt.add_argument('-p', '--password', default='', metavar='PASSWORD', help='If output archive/container format supports password protection, use this password to protect output file.')
     opt.add_argument('--out-format', default='', choices=lib.packager.Packager.formatsMap.keys(), help = 'Explicitely define output format disregarding output file\'s extension. Can be one of following: ' + ', '.join(lib.packager.Packager.formatsMap.keys()))
-    opt.add_argument('-H', '--hide', default='', type=str, help='(Supported in ISO/IMG, ZIP) Set hidden attribute on file(s). Cannot be repeated, only comma-separated. Example: --hide icon.ico,evil.exe . Supports wildcards: --hide icon?.*')
+    opt.add_argument('-H', '--hide', default='', type=str, help='(Supported in ISO/IMG, ZIP, VHD/VHDX) Set hidden attribute on file(s). Cannot be repeated, only comma-separated. Example: --hide icon.ico,evil.exe . Supports wildcards: --hide icon?.*')
 
     zipo = opts.add_argument_group('ZIP specific options')
     zipo.add_argument('--zip-noreadonly', action='store_true', help='DISABLE ZIP MOTW bypass that is used by default. By default, PackMyPayload marks Office files as Read-Only making ZIP software unable to set MOTW flag on them when extracted. This option disables that behavior.')

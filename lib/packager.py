@@ -745,6 +745,14 @@ class Packager:
                 self.logger.info('packed directory:')
                 self.logger.info(f'\t{infile} => {dstpath}')
 
+            if type(self.hide) is list and len(self.hide) > 0:
+                for fname in os.listdir(dstpath):
+                    for hideFile in self.hide:
+                        if Packager.checkFilenameAgainstWildcard(fname, hideFile):
+                            self.logger.text(f'\tHiding file: {fname}')
+                            Packager.shell(f'attrib +h "{os.path.join(dstpath, fname)}"')
+                            break
+
             detachTemplate = ''
             with open(Packager.diskpartDetachVHD, 'r') as f:
                 detachTemplate = f.read()
@@ -886,6 +894,29 @@ DISKPART> detach vdisk
 
             if len(files) == 0:
                 self.logger.fatal('No input files found to pack into VHD/VHDX.')
+
+            hideCount = 0
+
+            if type(self.hide) is list and len(self.hide) > 0:
+                marked = []
+
+                for volpath, localpath in files:
+                    basename = os.path.basename(volpath)
+                    hideIt = any(
+                        Packager.checkFilenameAgainstWildcard(basename, h) or
+                        Packager.checkFilenameAgainstWildcard(volpath, h)
+                        for h in self.hide)
+
+                    if hideIt:
+                        hideCount += 1
+                        self.logger.text(f'\tHiding file: {volpath}')
+
+                    marked.append((volpath, localpath, hideIt))
+
+                files = marked
+
+            if hideCount > 0:
+                self.logger.info(f'Set hidden attribute on {hideCount} file(s).')
 
             totalSize = sum(os.path.getsize(f[1]) for f in files)
             vhdsize = self.options.get('vhd_size') or 1024
