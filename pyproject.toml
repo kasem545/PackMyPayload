@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "PackMyPayload"
+version = "1.4.0"
+description = "Packages a payload into container formats (ISO, IMG, VHD, VHDX, CAB, PDF, ZIP, 7Z) that can bypass the Mark-of-the-Web (MOTW) protections on Windows."
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Mariusz Banach", email = "mb@binary-offensive.com" },
+]
+requires-python = ">=3.8"
+keywords = ["security", "red-team", "initial-access", "motw", "payload", "containers"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: Security",
+]
+dependencies = [
+    "zipfile2",
+    "pyminizip",
+    "py7zr",
+    "pycdlib",
+    "cabarchive",
+    "pypdf",
+    "colorama",
+]
+
+[project.urls]
+Homepage = "https://github.com/mgeeky/PackMyPayload"
+
+[project.scripts]
+packmypayload = "PackMyPayload:main"
+
+[tool.setuptools]
+packages = ["lib"]
+py-modules = ["PackMyPayload"]
+
+[tool.setuptools.package-data]
+lib = [
+    "templates/*.txt",
+    "templates/*.ps1",
+]

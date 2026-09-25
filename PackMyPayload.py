@@ -25,7 +25,7 @@ def banner():
     +             o     +           +             o     +         +
     o  +           +        +           o  +           +          o
 -_-^-^-^-^-^-^-^-^-^-^-^-^-^-^-^-^-_-_-_-_-_-_-_,------,      o
-   :: PACK MY PAYLOAD (1.3.0)       -_-_-_-_-_-_-|   /\\_/\\
+   :: PACK MY PAYLOAD (1.4.0)       -_-_-_-_-_-_-|   /\\_/\\
    for all your container cravings   -_-_-_-_-_-~|__( ^ .^)  +    +
 -_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-__-_-_-_-_-_-_-''  ''
 +      o         o   +       o       +      o         o   +       o
@@ -81,8 +81,8 @@ Supported container/archive formats:
 
     vhdopts = opts.add_argument_group('VHD specific options')
     vhdopts.add_argument('--vhd-size', default=1024, type=int, metavar='SIZE', help='VHD dynamic size in MB. Default: 1024')
-    vhdopts.add_argument('--vhd-letter', default='', metavar='LETTER', help='Drive letter where to mount VHD drive. Default: will pick unused one at random.')
-    vhdopts.add_argument('--vhd-filesystem', default='fat32', choices=['fat','fat32','ntfs'], metavar='FS', help='Filesystem to be used while formatting VHD. Default: FAT32. Supported: fat, fat32, ntfs')
+    vhdopts.add_argument('--vhd-letter', default='', metavar='LETTER', help='(Windows only) Drive letter where to mount VHD drive. Default: will pick unused one at random.')
+    vhdopts.add_argument('--vhd-filesystem', default='fat32', choices=['fat','fat32','ntfs'], metavar='FS', help='Filesystem to be used while formatting VHD. Default: FAT32. Supported: fat, fat32, ntfs. On Linux/macOS only fat/fat32 can be created (pure-Python), ntfs requires Windows.')
     
     args = opts.parse_args()
     globalOpts.update(vars(args))
@@ -94,7 +94,7 @@ Supported container/archive formats:
 
     return args
 
-def main(argv):
+def main(argv=None):
     args = getoptions()
     if not args:
         return False

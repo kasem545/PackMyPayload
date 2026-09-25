@@ -3,5 +3,5 @@ pyminizip
 py7zr
 pycdlib
 cabarchive
-pypdf2
+pypdf
 colorama

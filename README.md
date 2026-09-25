@@ -119,15 +119,32 @@ Formats supported:
 | `IMG`  | Yes          | Yes                            | No                  |                                               |
 | `PDF`  | ?            | Yes                            | No                  | Depends on Javascript support in PDF reader   |
 | `CAB`  | No           | Yes                            | No                  | Requires few additional clicks on victim-side |
-| `VHD`  | Yes          | Yes                            | Yes                 | This script currently can't make directories  |
-| `VHDX` | Yes          | Yes                            | Yes                 | This script currently can't make directories  |
+| `VHD`  | Yes          | Yes                            | Yes (Windows) / No (Linux, macOS) | On Linux/macOS created in pure Python, supports subdirectories |
+| `VHDX` | Yes          | Yes                            | Yes (Windows) / No (Linux, macOS) | On Linux/macOS created in pure Python, supports subdirectories |
 
 * In ZIP case, MOTW can be stripped when [CVE-2022-41091](https://twitter.com/wdormann/status/1590044005395357697) is abused. **PackMyPayload** by default marks inner ZIP files as read-only unless `--zip-noreadonly` given.
 
 ## Installation
 
-- Clone this repository
-- Install requirements:
+- With `pipx` (recommended - installs into an isolated environment and exposes the `packmypayload` command):
+```
+$ pipx install git+https://github.com/mgeeky/PackMyPayload
+```
+or from a local clone:
+```
+$ pipx install .
+```
+Then use it simply as:
+```
+$ packmypayload <infile> <outfile>
+```
+
+Or run it once without installing:
+```
+$ pipx run --spec git+https://github.com/mgeeky/PackMyPayload packmypayload <infile> <outfile>
+```
+
+- Classic way - clone this repository, install requirements and run the script directly:
 ```
 cmd> pip3 install -r requirements.txt
 ```
@@ -161,7 +178,7 @@ Burning files onto ISO:
 [+] Generated file written to (size: 69632): malicious.iso
 ```
 
-2. To pack files into VHD/VHDX one must run this script on Windows from an elevated user context (e.g. Local Administrator). This is due to `DISKPART` requiring Admin access to physical devices objects/namespace. Best experience one gets by running the script on `Windows Terminal (wt)` or `ConEmu` as they support ANSI colors. Otherwise, should an output look bad, disable those colors with `-N` flag:
+2. To pack files into VHD/VHDX on Windows one must run this script from an elevated user context (e.g. Local Administrator). This is due to `DISKPART` requiring Admin access to physical devices objects/namespace. Best experience one gets by running the script on `Windows Terminal (wt)` or `ConEmu` as they support ANSI colors. Otherwise, should an output look bad, disable those colors with `-N` flag:
 ```
 PS> py PackMyPayload.py .\evil.lnk .\evil.vhd -v -N
 
@@ -199,6 +216,21 @@ o      ~     +           ~          <mb [at] binary-offensive.com>
 [+] Generated file written to (size: 6311936): evil.vhd
 ```
 
+3. On Linux/macOS, VHD/VHDX containers are built entirely in pure Python (no `DISKPART`, no `qemu-img`/`mkfs.vfat`/`mtools`, no elevation required). The disk is MBR-partitioned, formatted with FAT12/16/32 (including long file names and subdirectories) and stored as a sparse/dynamic image, therefore the resulting file stays roughly the size of the payload. FAT32 (default) and FAT16 (`--vhd-filesystem fat`) are supported; NTFS requires running on Windows:
+
+```
+$ python3 PackMyPayload.py ./evil.lnk evil.vhdx -v
+
+[.] Packaging input file to output .vhdx (vhdx)...
+[INFO] Will create VHDX of size:   1024MB (Dynamic)
+[INFO] Will use filesystem:        FAT32
+[.] Building filesystem & disk image structures...
+[INFO] Created VHDX containing FAT32 filesystem (cluster size: 8192 bytes, files: 1, total input size: 1260).
+[+] File packed into VHDX.
+
+[+] Generated file written to (size: 5255168): evil.vhdx
+```
+
 
 ---
 
@@ -210,7 +242,7 @@ usage:
     +             o     +           +             o     +         +
     o  +           +        +           o  +           +          o
 -_-^-^-^-^-^-^-^-^-^-^-^-^-^-^-^-^-_-_-_-_-_-_-_,------,      o
-   :: PACK MY PAYLOAD (1.3.0)       -_-_-_-_-_-_-|   /\_/\
+   :: PACK MY PAYLOAD (1.4.0)       -_-_-_-_-_-_-|   /\\_/\\
    for all your container cravings   -_-_-_-_-_-~|__( ^ .^)  +    +
 -_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-__-_-_-_-_-_-_-''  ''
 +      o         o   +       o       +      o         o   +       o
@@ -251,8 +283,10 @@ ZIP specific options:
 
 VHD specific options:
   --vhd-size SIZE       VHD dynamic size in MB. Default: 1024
-  --vhd-letter LETTER   Drive letter where to mount VHD drive. Default: will pick unused one at random.
-  --vhd-filesystem FS   Filesystem to be used while formatting VHD. Default: FAT32. Supported: fat, fat32, ntfs
+  --vhd-letter LETTER   (Windows only) Drive letter where to mount VHD drive. Default: will pick unused one at
+                        random.
+  --vhd-filesystem FS   Filesystem to be used while formatting VHD. Default: FAT32. Supported: fat, fat32, ntfs. On
+                        Linux/macOS only fat/fat32 can be created (pure-Python), ntfs requires Windows.
 
 =====================================================
 
@@ -274,7 +308,9 @@ Supported container/archive formats:
 
 ## Known Issues
 
-- Can't create directories while copying files onto VHD/VHDX mounted volumes.
+- On Windows, can't create directories while copying files onto VHD/VHDX mounted volumes (files get flattened to the volume's root). On Linux/macOS subdirectories are supported.
+- Backdooring (`-i`) an existing VHD/VHDX is supported only on Windows.
+- On Linux/macOS only `fat`/`fat32` filesystems can be created inside VHD/VHDX; `ntfs` requires Windows.
 
 
 ---
